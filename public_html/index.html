@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <title>Waveform viewer</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="//cdnjs.cloudflare.com/ajax/libs/dygraph/1.1.1/dygraph-combined.js"></script>
+        <script src="//code.jquery.com/jquery-1.12.0.min.js"></script>
+    </head>
+    <body>
+        <div id="graph" style="width: 100%"></div>
+        <script>
+            data = [['a', 'b', 'c', 'd']];
+            g = new Dygraph(document.getElementById("graph"),
+                    // For possible data formats, see http://dygraphs.com/data.html
+                    // The x-values could also be dates, e.g. "2012/03/1
+                    data,
+                    {
+                        // options go here. See http://dygraphs.com/options.html
+                        legend: 'always',
+                        animatedZooms: true,
+                        title: 'Waveforms',
+                        stepPlot: true,
+                        showRangeSelector: true,
+                        ylabel: 'Outputs',
+                        xlabel: 'Time since start (nS)',
+                        interactionModel: Dygraph.Interaction.defaultModel,
+                        customBars: true,
+                        axes: {
+                            y: {
+                                axisLabelFormatter: function (y, granularity, opts, dygraph) {
+                                    if (y % 2 === 0)
+                                        return dygraph.getLabels()[1 + y / 2];
+                                    else
+                                        return "";
+                                },
+                                valueFormatter: function (y, opts, series_name) {
+                                    return y % 2;
+                                }
+                            }
+                        },
+                        zoomCallback: function (min, max, yRanges) {
+                            console.log("zoom " + min + " " + max + " " + yRanges);
+                        }
+                    });
+
+            $.getJSON('waveform.json?callback', function (newData) {
+                console.log("I got data" + newData.outputs);
+                labelData = newData.outputs;
+                var labels = [];
+                labels.push("time");
+                for (var key in labelData) {
+                    labels.push(key);
+                }
+                var processedData = sparsifyData(newData.data,labelData);
+                g.updateOptions({file: processedData, labels: labels});
+            });
+            function sparsifyData(rawData,labelData) {
+                var processedData = [];
+                var totalBins = rawData.length;
+                var binFactor = totalBins > 10000000 ? 10000
+                        : totalBins > 1000000 ? 1000
+                        : totalBins > 100000 ? 100
+                        : totalBins > 10000 ? 10 : 1;
+                var avg = new Array(1 + Object.keys(labelData).length);
+                avg.fill(0);
+                var bins = 0;
+                for (var i = 0; i < totalBins; i++) {
+                    var d = rawData[i];
+                    var out = d[2];
+                    if (binFactor === 1) {
+                        var row = [d[0]];
+                        var j = 0;
+                        for (var key in labelData) {
+                            row.push((out & labelData[key]) !== 0 ? j * 2 + 1 : j * 2);
+                            j++;
+                        }
+                        processedData.push(row);
+                    } else {
+                        bins += 1;
+                        avg[0] += d[0];
+                        var j = 0;
+                        for (var key in labelData) {
+                            avg[j + 1] += (out & labelData[key]) !== 0 ? j * 2 + 1 : j * 2;
+                            j++;
+                        }
+                        if (bins === binFactor || i===totalBins-1) {
+                            for (var j in avg) {
+                                avg[j] /= bins;
+                            }
+                            data = new Array(avg.length);
+                            for (var k=0; k<avg.length; k++) {
+                                if (k===0) {
+                                    data[k] = avg[k];
+                                } else {
+                                    data[k] = [Math.floor(avg[k]),avg[k],Math.ceil(avg[k])];
+                                }
+                            }
+                            processedData.push(data);
+                            bins = 0;
+                            avg.fill(0);
+                        }
+                    }
+                }
+                console.log("I sparsified the data " + totalBins + " " + binFactor);
+                return processedData;
+            }
+        </script>
+    </body>
+</html>
